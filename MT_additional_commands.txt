@@ -1,0 +1,21 @@
+# Additional LaTeX commands for translation
+# if you need more, just add lines with the same format (don't miss the ","!)
+# each line is in the format of (command_name, N, (n1, n2, ...)),
+# N is the total number of arguments,
+# n1, n2, ... are the index of arguments requiring translation (counting from 0)
+additional_commands = [
+   # latex: \mycommand1{translation needed}
+   ('mycommand1', 1, (0, )),
+   # latex: \mycommand2{translation not needed}{translation needed}
+   ('mycommand2', 2, (1, )),
+   # latex: \mycommand3{translation needed}{translation not needed}
+   ('mycommand3', 2, (0, )),
+   # latex: \mycommand4{translation needed}{translation not needed}{translation needed}{translation not needed}
+   ('mycommand4', 4, (0, 2)),
+   # practical example: \textcolor{red}{Need translation here}
+   ('textcolor', 2, (1, )),
+   # Custom commands for testing
+   ('customnote', 1, (0, )),
+   ('highlight', 2, (1, )),
+   ('mybox', 3, (1, )),
+]

@@ -1,0 +1,75 @@
+{
+  "_comment": "This is an example configuration file for MathTranslate",
+
+  "_translation_settings": "Custom environment and command translation settings",
+
+  "custom_environments": [
+    "example",
+    "definition",
+    "lemma",
+    "proposition",
+    "remark",
+    "algorithm",
+    "figure",
+    "table",
+    "algorithmic",
+    "lstlisting"
+  ],
+
+  "custom_commands": [
+    "newcommand",
+    "renewcommand",
+    "DeclareMathOperator",
+    "providecommand",
+    "def"
+  ],
+
+  "skip_environments": [
+    "equation",
+    "align",
+    "gather",
+    "displaymath",
+    "eqnarray",
+    "multline",
+    "flalign",
+    "alignat",
+    "cases",
+    "matrix",
+    "bmatrix",
+    "pmatrix",
+    "vmatrix",
+    "Vmatrix",
+    "tikzpicture"
+  ],
+
+  "skip_commands": [
+    "ref",
+    "label",
+    "cite",
+    "bibitem",
+    "input",
+    "include",
+    "bibliography",
+    "usepackage",
+    "documentclass",
+    "begin",
+    "end"
+  ],
+
+  "_engine_settings": "Translation engine settings",
+
+  "openai": {
+    "api_key": "your-openai-api-key-here",
+    "base_url": "https://api.openai.com/v1",
+    "model": "gpt-3.5-turbo",
+    "max_tokens": 8000,
+    "temperature": 0.3,
+    "chunk_size": 6000
+  },
+
+  "tencent": {
+    "secret_id": "your-tencent-secret-id",
+    "secret_key": "your-tencent-secret-key",
+    "region": "ap-shanghai"
+  }
+}

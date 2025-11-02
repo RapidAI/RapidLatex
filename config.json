@@ -1,0 +1,53 @@
+{
+  "openai": {
+    "api_key": "sk-b702fe39f0c746c08e6e3efc904b88f3",
+    "base_url": "https://api.deepseek.com/v1",
+    "model": "deepseek-chat",
+    "max_tokens": 8000,
+    "temperature": 0.3,
+    "chunk_size": 6000
+  },
+
+  "custom_environments": [
+    "example",
+    "definition",
+    "lemma",
+    "proposition",
+    "remark",
+    "algorithm",
+    "algorithmic",
+    "inparaenum"
+  ],
+
+  "custom_commands": [
+    "newcommand",
+    "renewcommand",
+    "DeclareMathOperator"
+  ],
+
+  "skip_environments": [
+    "equation",
+    "align",
+    "gather",
+    "displaymath",
+    "eqnarray",
+    "multline",
+    "tikzpicture",
+    "cases",
+    "matrix"
+  ],
+
+  "skip_commands": [
+    "ref",
+    "label",
+    "cite",
+    "bibitem",
+    "input",
+    "include",
+    "bibliography",
+    "usepackage",
+    "documentclass",
+    "begin",
+    "end"
+  ]
+}
