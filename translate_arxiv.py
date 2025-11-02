@@ -566,8 +566,9 @@ def main(args=None, require_updated=False):
         verify_cached_files()
         sys.exit(0)
 
-    # Only check for updates if doing actual translation work
-    utils.check_update(require_updated=require_updated)
+    # Only check for updates if doing actual translation work and network check is not disabled
+    if not hasattr(options, 'no_network_check') or not options.no_network_check:
+        utils.check_update(require_updated=require_updated)
 
     # Handle compile options: if --no-compile is specified, disable compilation
     if hasattr(options, 'no_compile') and options.no_compile:

@@ -154,6 +154,19 @@ Translated text (strictly faithful to original):"""
         if not chunk.strip():
             return chunk
 
+        # Protect math formula placeholders (XMATHX_*)
+        import re
+        placeholder_pattern = r'XMATHX_\d+(?:_\d+)*'
+        placeholders = re.findall(placeholder_pattern, chunk)
+
+        # Create a mapping of placeholders to temporary safe tokens
+        placeholder_map = {}
+        protected_chunk = chunk
+        for i, placeholder in enumerate(placeholders):
+            safe_token = f"__MATH_PLACEHOLDER_{i}__"
+            placeholder_map[safe_token] = placeholder
+            protected_chunk = protected_chunk.replace(placeholder, safe_token)
+
         # Construct the prompt with strict faithfulness requirements
         prompt = f"""You are a professional academic translator. Your task is to translate the following text from {source_language} to {target_language}.
 
@@ -165,9 +178,10 @@ CRITICAL REQUIREMENTS:
 5. Maintain the original structure, formatting, and paragraph breaks
 6. Translate ONLY the text content, keeping all non-text elements unchanged
 7. If you encounter ambiguous terms, choose the most literal translation rather than adding explanatory context
+8. SPECIAL INSTRUCTION: Any text that looks like "__MATH_PLACEHOLDER_N__" must be preserved exactly as-is. These are protected mathematical formula markers.
 
 Text to translate:
-{chunk}
+{protected_chunk}
 
 Translated text (strictly faithful to original):"""
 
@@ -192,6 +206,11 @@ Translated text (strictly faithful to original):"""
 
             if "choices" in data and len(data["choices"]) > 0:
                 translated_text = data["choices"][0]["message"]["content"].strip()
+
+                # Restore original placeholders from protected tokens
+                for safe_token, original_placeholder in placeholder_map.items():
+                    translated_text = translated_text.replace(safe_token, original_placeholder)
+
                 return translated_text
             else:
                 raise ValueError("Invalid response format from OpenAI API")

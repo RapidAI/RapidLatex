@@ -28,6 +28,11 @@ def merge_complete(tex):
             begin, end = match.span()
             filename = match.group(1)
 
+            # Skip .bbl files - they should remain as \input{*.bbl} commands
+            if filename.endswith('.bbl'):
+                print(f'skipping .bbl file: {filename} (preserving \\input command)')
+                continue
+
             # Handle .tex extension
             if not filename.endswith('.tex'):
                 filename = filename + '.tex'
@@ -58,44 +63,28 @@ def merge_complete(tex):
 
 def add_bbl(tex):
     '''
-    for replace \bibliography commands by the corresponding bbl file
+    Modified to preserve \input{*.bbl} commands without expanding bibliography content.
+    This function now only handles \bibliographystyle commands and preserves \input{*.bbl} as-is.
     '''
     path_tex = f'{tex}.tex'
     path_bbl = f'{tex}.bbl'
 
     if not os.path.exists(path_bbl):
-        print(f'Warning: {path_bbl} not found, skipping bibliography processing')
+        print(f'Warning: {path_bbl} not found, but preserving \input commands anyway')
         return
 
     encoding = get_file_encoding(path_tex)
     content = open(path_tex, encoding=encoding).read()
-    encoding = get_file_encoding(path_bbl)
-    bbl = open(path_bbl, encoding=encoding).read()
 
     # Remove \bibliographystyle commands but keep them as comments
     content = re.sub(r'\\bibliographystyle\{[^}]*\}', r'% \g<0>', content)
 
-    # Replace \bibliography commands with bbl content
-    patterns = [r'\\bibliography\{.*?\}', r'\\thebibliography\{.*?\}']
-    bibliography_replaced = False
+    # Check if \input{*.bbl} command exists in the file
+    bbl_input_pattern = re.compile(r'\\input\{.*?\.bbl\}')
+    if bbl_input_pattern.search(content):
+        print(f'Found \\input{{*.bbl}} command in {path_tex}, preserving it without expansion')
+    else:
+        print(f'No \\input{{*.bbl}} command found in {path_tex}, but .bbl file exists')
 
-    for pattern in patterns:
-        pattern_input = re.compile(pattern, re.DOTALL)
-        while True:
-            result = pattern_input.search(content)
-            if result is None:
-                break
-            begin, end = result.span()
-            content = content[:begin] + bbl + content[end:]
-            bibliography_replaced = True
-            print(f'Replaced bibliography command with content from {path_bbl}')
-
-    # If no bibliography commands were found but we have bbl content, add it at the end
-    if not bibliography_replaced and os.path.exists(path_bbl):
-        print(f'No bibliography command found, appending bibliography at end')
-        if content.endswith('\end{document}'):
-            content = content.replace('\end{document}', bbl + '\n\n\end{document}')
-        else:
-            content += '\n\n' + bbl
-
+    # Write back the content with \bibliographystyle commented out but preserving \input{*.bbl}
     print(content, file=open(path_tex, "w", encoding='utf-8'))

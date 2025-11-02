@@ -277,6 +277,12 @@ class LatexTranslator:
 
     def worker(self, latex_original_paragraph):
         try:
+            # Check for problematic LaTeX patterns that might cause issues
+            if '\\string@' in latex_original_paragraph:
+                print(f"Warning: Found problematic \\string@ pattern in paragraph {self.num}, cleaning...")
+                # Replace problematic patterns
+                latex_original_paragraph = latex_original_paragraph.replace('\\string@', ' @')
+
             if self.add_cache:
                 hash_key_paragraph = cache.deterministic_hash(latex_original_paragraph)
                 latex_translated_paragraph = cache.load_paragraph(self.hash_key, hash_key_paragraph)
@@ -288,12 +294,15 @@ class LatexTranslator:
             self.num += 1
             return latex_translated_paragraph
         except BaseException as e:
-            print('Error found in Paragraph', self.num)
-            print('Error type:', type(e).__name__)
-            print('Error message:', str(e))
-            print('Content preview:', latex_original_paragraph[:100] + '...' if len(latex_original_paragraph) > 100 else latex_original_paragraph)
+            print(f'Error found in Paragraph {self.num}')
+            print(f'Error type: {type(e).__name__}')
+            print(f'Error message: {str(e)}')
+            print(f'Content preview: {latex_original_paragraph[:100] + "..." if len(latex_original_paragraph) > 100 else latex_original_paragraph}')
             # Return original paragraph instead of raising exception to prevent translation from stopping
             print('Returning original paragraph to continue translation...')
+            return latex_original_paragraph
+        except Exception as e:
+            print(f'Unexpected error in Paragraph {self.num}: {e}')
             return latex_original_paragraph
 
     def translate_full_latex(self, latex_original, make_complete=True, nocache=False):
@@ -342,20 +351,55 @@ class LatexTranslator:
             # Use submit with timeout instead of map to prevent hanging
             future_to_index = {executor.submit(self.worker, paragraph): i for i, paragraph in enumerate(latex_original_paragraphs)}
             latex_translated_paragraphs = [None] * len(latex_original_paragraphs)
+            completed_count = 0
 
-            for future in tqdm.auto.tqdm(concurrent.futures.as_completed(future_to_index, timeout=300), total=len(latex_original_paragraphs)):
+            # Process all futures with better error handling
+            all_futures = list(future_to_index.keys())
+
+            # First, try to complete all futures
+            for future in tqdm.auto.tqdm(concurrent.futures.as_completed(all_futures, timeout=600), total=len(latex_original_paragraphs)):
                 try:
-                    result = future.result(timeout=30)  # 30 second timeout per paragraph
+                    result = future.result(timeout=60)  # 60 seconds timeout per paragraph
                     index = future_to_index[future]
                     latex_translated_paragraphs[index] = result
+                    completed_count += 1
                 except concurrent.futures.TimeoutError:
-                    print("Warning: Paragraph translation timed out, using original text")
+                    print(f"Warning: Paragraph {future_to_index[future]} translation timed out, using original text")
                     index = future_to_index[future]
                     latex_translated_paragraphs[index] = latex_original_paragraphs[index]
+                    completed_count += 1
                 except Exception as e:
-                    print(f"Warning: Paragraph translation failed: {e}, using original text")
+                    print(f"Warning: Paragraph {future_to_index[future]} translation failed: {e}, using original text")
                     index = future_to_index[future]
                     latex_translated_paragraphs[index] = latex_original_paragraphs[index]
+                    completed_count += 1
+
+            # After as_completed, check for any futures that didn't complete
+            remaining_futures = [f for f in all_futures if not f.done()]
+            if remaining_futures:
+                print(f"Warning: {len(remaining_futures)} futures did not complete, processing with fallback...")
+                for future in remaining_futures:
+                    try:
+                        # Try to get result with shorter timeout
+                        result = future.result(timeout=10)
+                        index = future_to_index[future]
+                        latex_translated_paragraphs[index] = result
+                        completed_count += 1
+                    except Exception as e:
+                        print(f"Warning: Fallback failed for paragraph {future_to_index[future]}: {e}")
+                        index = future_to_index[future]
+                        latex_translated_paragraphs[index] = latex_original_paragraphs[index]
+                        completed_count += 1
+
+        # Check for any None values and fill with original text
+        none_count = latex_translated_paragraphs.count(None)
+        if none_count > 0:
+            print(f"Warning: {none_count} paragraphs were not translated, filling with original text")
+            for i, paragraph in enumerate(latex_translated_paragraphs):
+                if paragraph is None:
+                    latex_translated_paragraphs[i] = latex_original_paragraphs[i]
+
+        print(f"Translation summary: {completed_count}/{len(latex_original_paragraphs)} paragraphs processed")
 
         latex_translated = '\n\n'.join(latex_translated_paragraphs)
 
@@ -368,6 +412,16 @@ class LatexTranslator:
         latex_translated = latex_translated.replace('%', '\\%')
         latex_translated = process_latex.recover_special(latex_translated)
         latex_translated = process_latex.recover_accent(latex_translated)
+
+        # Optimize table widths to prevent overflow
+        try:
+            from table_optimizer import optimize_all_tables
+            latex_translated = optimize_all_tables(latex_translated)
+            print('Table width optimization completed')
+        except ImportError as e:
+            print(f'Warning: Table optimizer not available: {e}')
+        except Exception as e:
+            print(f'Warning: Table optimization failed: {e}')
 
         self.close()
 

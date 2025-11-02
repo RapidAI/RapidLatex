@@ -86,7 +86,7 @@ def check_update(require_updated=True):
 
 
 def add_arguments(parser):
-    parser.add_argument("-engine", default=config.default_engine, help=f'translation engine, avaiable options include google, tencent, and openai. default is {config.default_engine}')
+    parser.add_argument("--engine", dest='engine', default=config.default_engine, help=f'translation engine, avaiable options include google, tencent, and openai. default is {config.default_engine}')
     parser.add_argument("-from", default=config.default_language_from, dest='l_from', help=f'language from, default is {config.default_language_from}')
     parser.add_argument("-to", default=config.default_language_to, dest='l_to', help=f'language to, default is {config.default_language_to}')
     parser.add_argument("-threads", default=config.default_threads, type=int, help='threads for tencent translation, default is auto')
