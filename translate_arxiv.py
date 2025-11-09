@@ -16,6 +16,7 @@ import tempfile
 import urllib.request
 import socket
 import time
+import subprocess
 
 
 def check_network_connectivity(timeout=10):
@@ -329,6 +330,20 @@ def is_local_archive(input_str):
     return None
 
 
+def is_local_directory(input_str):
+    """
+    Check if input string refers to a local directory
+    Returns the directory path if it's a valid directory, None otherwise
+    """
+    # Remove quotes if present
+    input_str = input_str.strip('"\'')
+
+    # Check if it's a directory path
+    if os.path.isdir(input_str):
+        return input_str
+    return None
+
+
 def is_pdf(filename):
     return open(filename, 'rb').readline()[0:4] == b'%PDF'
 
@@ -340,15 +355,39 @@ def fallback_compilation(document_dir, tex_filename, document_name, output_dir):
     # Change to document directory for compilation
     original_cwd = os.getcwd()
     os.chdir(document_dir)
+
+    # Check if .bib files exist
+    has_bib_files = len([f for f in os.listdir('.') if f.endswith('.bib')]) > 0
+
     try:
-        # Run proper LaTeX compilation cycle with bibliography
-        import subprocess
+        # Step 1: First xelatex run (generates .aux file with citation info)
+        print('Running xelatex (1/3)...')
         result1 = subprocess.run(['xelatex', '-interaction=nonstopmode', tex_filename],
                               capture_output=True, text=True, encoding='utf-8', errors='ignore')
+
+        # Step 2: Run bibtex if .bib files exist
+        if has_bib_files:
+            print('Running bibtex...')
+            base_name = os.path.splitext(tex_filename)[0]
+            result_bib = subprocess.run(['bibtex', f'{base_name}.aux'],
+                                      capture_output=True, text=True, encoding='utf-8', errors='ignore')
+            if result_bib.returncode != 0:
+                print(f'Warning: bibtex returned non-zero exit code')
+                if result_bib.stderr:
+                    print(f'Bibtex errors: {result_bib.stderr[-200:]}')
+
+        # Step 3: Second xelatex run (inserts bibliography and resolves references)
+        print('Running xelatex (2/3)...')
         result2 = subprocess.run(['xelatex', '-interaction=nonstopmode', tex_filename],
                               capture_output=True, text=True, encoding='utf-8', errors='ignore')
 
-        if result1.returncode == 0 and result2.returncode == 0:
+        # Step 4: Final xelatex run (updates reference numbers)
+        print('Running xelatex (3/3)...')
+        result3 = subprocess.run(['xelatex', '-interaction=nonstopmode', tex_filename],
+                              capture_output=True, text=True, encoding='utf-8', errors='ignore')
+
+        # Check results
+        if all(r.returncode == 0 for r in [result1, result2, result3]):
             print(f'Fallback compilation successful: {tex_filename}')
             pdf_filename = os.path.splitext(tex_filename)[0] + '.pdf'
             if os.path.exists(pdf_filename):
@@ -363,10 +402,11 @@ def fallback_compilation(document_dir, tex_filename, document_name, output_dir):
                 print(f'Fallback compilation completed but PDF not found: {pdf_filename}')
         else:
             print(f'Fallback compilation warnings or errors for {tex_filename}:')
-            if result1.stderr:
-                print(f'First run errors: {result1.stderr[-200:]}')
-            if result2.stderr:
-                print(f'Second run errors: {result2.stderr[-200:]}')
+            print(f'Run 1 return code: {result1.returncode}')
+            if result2:
+                print(f'Run 2 return code: {result2.returncode}')
+            if result3:
+                print(f'Run 3 return code: {result3.returncode}')
 
     except Exception as e:
         print(f'Fallback compilation error for {tex_filename}: {e}')
@@ -506,6 +546,11 @@ def translate_dir(dir, options):
             if tex in bbls:
                 process_file.add_bbl(tex)
             complete_texs.append(tex)
+
+    # Check for .bib files
+    if len(complete_texs) > 0 and len(bibs) > 0:
+        print(f'Found {len(bibs)} .bib files: {[f+".bib" for f in bibs]}')
+        print('References will be processed by LaTeX during compilation')
     if len(complete_texs) == 0:
         return False
     for basename in texs:
@@ -541,7 +586,7 @@ def main(args=None, require_updated=False):
     '''
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("number", nargs='?', type=str, help='arxiv number or path to local archive file (.zip, .tar.gz, .tgz, .tar, .tar.bz2, .tbz2, .tar.xz, .txz)')
+    parser.add_argument("number", nargs='?', type=str, help='arxiv number, local directory path, or path to local archive file (.zip, .tar.gz, .tgz, .tar, .tar.bz2, .tbz2, .tar.xz, .txz)')
     parser.add_argument("-o", type=str, help='output path')
     parser.add_argument("--from_dir", action='store_true')
     parser.add_argument("--notranslate", action='store_true')  # debug option
@@ -587,12 +632,19 @@ def main(args=None, require_updated=False):
 
     # Check if input is a local archive file
     local_archive = is_local_archive(number)
+    local_directory = is_local_directory(number)
 
     if local_archive:
         print(f'Using local archive: {local_archive}')
         print()
         # Use archive filename (without extension) as document name
         document_name = os.path.splitext(os.path.basename(local_archive))[0]
+        print(f'Document name: {document_name}')
+    elif local_directory:
+        print(f'Using local directory: {local_directory}')
+        print()
+        # Use directory name as document name
+        document_name = os.path.basename(local_directory.rstrip('/\\'))
         print(f'Document name: {document_name}')
     else:
         print('arxiv number:', number)
@@ -636,12 +688,13 @@ def main(args=None, require_updated=False):
     print(f'temporary directory: {temp_dir}')
 
     try:
-        if options.from_dir:
-            shutil.copytree(number, temp_dir, dirs_exist_ok=True)
+        if options.from_dir or local_directory:
+            src_dir = local_directory if local_directory else number
+            shutil.copytree(src_dir, temp_dir, dirs_exist_ok=True)
         os.chdir(temp_dir)
         # must os.chdir(cwd) whenever released!
 
-        if not options.from_dir:
+        if not options.from_dir and not local_directory:
             if local_archive:
                 # Process local archive file
                 try:

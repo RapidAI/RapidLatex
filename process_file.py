@@ -88,3 +88,76 @@ def add_bbl(tex):
 
     # Write back the content with \bibliographystyle commented out but preserving \input{*.bbl}
     print(content, file=open(path_tex, "w", encoding='utf-8'))
+
+
+def generate_bbl_from_bib(tex_path):
+    """
+    Generate .bbl file from .bib references.
+    Looks for \bibliography{refname} command and tries to find corresponding .bib file.
+    If found, compiles it to generate .bbl file using bibtex.
+    """
+    import subprocess
+
+    # Read tex file
+    encoding = get_file_encoding(tex_path)
+    content = open(tex_path, encoding=encoding).read()
+
+    # Look for \bibliography{...} command
+    bib_pattern = r'\\bibliography\\{([^}]+)\\}'
+    bib_match = re.search(bib_pattern, content)
+
+    if not bib_match:
+        return False
+
+    bib_name = bib_match.group(1)
+    bib_path = f'{bib_name}.bib'
+    bbl_path = f'{bib_name}.bbl'
+
+    # Check if .bib file exists
+    if not os.path.exists(bib_path):
+        print(f'Warning: Bibliography file {bib_path} referenced in {tex_path} not found')
+        return False
+
+    # Check if .bbl file already exists
+    if os.path.exists(bbl_path):
+        print(f'.bbl file {bbl_path} already exists, skipping generation')
+        return True
+
+    # Try to generate .bbl file
+    print(f'Generating .bbl file from {bib_path}...')
+
+    try:
+        # Create a minimal aux file to run bibtex
+        aux_content = '\\relax\n' + '\\citation{*}\n' + f'\\bibdata{{{bib_name}}}\n' + '\\bibstyle{plain}\n'
+
+        with open(f'{bib_name}.aux', 'w', encoding='utf-8') as f:
+            f.write(aux_content)
+
+        # Run bibtex
+        result = subprocess.run(['bibtex', f'{bib_name}.aux'],
+                              capture_output=True, text=True, timeout=30)
+
+        # Check if .bbl was generated
+        if os.path.exists(f'{bib_name}.bbl'):
+            print(f'Successfully generated {bib_name}.bbl from {bib_name}.bib')
+
+            # Clean up aux files
+            for ext in ['.aux', '.blg', '.log']:
+                temp_file = f'{bib_name}{ext}'
+                if os.path.exists(temp_file):
+                    try:
+                        os.remove(temp_file)
+                    except:
+                        pass
+
+            return True
+        else:
+            print(f'Failed to generate .bbl file. BibTeX output: {result.stderr}')
+            return False
+
+    except FileNotFoundError:
+        print('Warning: bibtex command not found. Cannot generate .bbl file from .bib')
+        return False
+    except Exception as e:
+        print(f'Error generating .bbl file: {e}')
+        return False
