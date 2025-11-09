@@ -323,6 +323,9 @@ class LatexTranslator:
         latex_original = process_latex.remove_bibnote(latex_original)
         latex_original = process_latex.process_newcommands(latex_original)
 
+        # Protect makeatletter blocks to prevent translation of @ commands
+        latex_original, protected_blocks = process_latex.process_makeatletter_blocks(latex_original)
+
         latex_original = process_latex.replace_accent(latex_original)
         latex_original = process_latex.replace_special(latex_original)
 
@@ -410,6 +413,10 @@ class LatexTranslator:
         latex_translated = process_latex.process_specific_command(latex_translated, self.translate_text_in_paragraph_latex, 'title')
 
         latex_translated = latex_translated.replace('%', '\\%')
+
+        # Recover protected makeatletter blocks (must be done before recovering special characters)
+        latex_translated = process_latex.recover_makeatletter_blocks(latex_translated, protected_blocks)
+
         latex_translated = process_latex.recover_special(latex_translated)
         latex_translated = process_latex.recover_accent(latex_translated)
 

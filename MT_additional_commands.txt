@@ -18,7 +18,4 @@ additional_commands = [
    ('customnote', 1, (0, )),
    ('highlight', 2, (1, )),
    ('mybox', 3, (1, )),
-  #  \renewcommand{\arraystretch}{1.1}
-   ('renewcommand', 2, (1, )),
-
 ]

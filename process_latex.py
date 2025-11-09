@@ -378,12 +378,41 @@ def replace_special(text):
         # add space around
         text = text.replace(f'\\{special}', f' {math_code}{special_character_forward[special]} ')
 
+    # Handle direct tilde character ~ (non-breaking space in LaTeX)
+    # Only replace if not preceded by backslash
+    # Note: Don't add spaces around the tilde, as it's already a space-like character
+    text = re.sub(r'(?<![\\])~', f'{math_code}TD', text)
+
     return text
 
 
 def recover_special(text):
     for special in list_special:
         text = text.replace(math_code + special_character_forward[special], f'\\{special}')
+
+    # Recover direct tilde character (non-breaking space in LaTeX)
+    # Note: No space in the pattern since we removed it from replacement
+    text = text.replace(f'{math_code}TD', '~')
+
+    return text
+
+
+def replace_latex_characters(text):
+    """
+    Replace LaTeX special characters that are not commands (e.g., ~, %, $, etc.)
+    This protects them during translation.
+    """
+    # Replace ~ (non-breaking space) but not precedeed by backslash
+    text = re.sub(r'(?<!\\)~', f' {math_code}TD ', text)
+
+    return text
+
+
+def recover_latex_characters(text):
+    """
+    Recover LaTeX special characters after translation.
+    """
+    text = text.replace(f'{math_code}TD ', '~')
 
     return text
 
@@ -483,6 +512,44 @@ def process_newcommands(latex):
         count += 1
     for i in range(count):
         latex = latex.replace(f'{math_code}_REPLACE{i}_NEWCOMMAND', full_newcommands[i])
+    return latex
+
+
+def process_makeatletter_blocks(latex):
+    """
+    Protect \makeatletter and \makeatother blocks from translation.
+    These blocks contain LaTeX macros with @ characters that should not be translated.
+    """
+    # Pattern to match \makeatletter ... \makeatother blocks
+    pattern = regex.compile(r'\\makeatletter(.*?)\\makeatother', regex.DOTALL)
+
+    protected_blocks = []
+    count = 0
+
+    def replace_function(match):
+        nonlocal count
+        content = match.group(0)
+        placeholder = f'{math_code}_MAKEATLETTER{count}_PROTECTED'
+        protected_blocks.append(content)
+        count += 1
+        return placeholder
+
+    latex = pattern.sub(replace_function, latex)
+    return latex, protected_blocks
+
+
+def recover_makeatletter_blocks(latex, protected_blocks):
+    """
+    Recover the protected \makeatletter blocks after translation.
+    """
+    for i, block in enumerate(protected_blocks):
+        placeholder = f'{math_code}_MAKEATLETTER{i}_PROTECTED'
+        escaped_placeholder = placeholder.replace('_', r'\_')  # Handle escaped underscores
+        # Try unescaped version first, then escaped version
+        if placeholder in latex:
+            latex = latex.replace(placeholder, block)
+        elif escaped_placeholder in latex:
+            latex = latex.replace(escaped_placeholder, block)
     return latex
 
 

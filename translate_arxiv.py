@@ -334,14 +334,14 @@ def is_pdf(filename):
 
 
 def fallback_compilation(document_dir, tex_filename, document_name, output_dir):
-    """Fallback compilation method using basic XeLaTeX"""
+    """Fallback compilation method using basic XeLaTeX with proper bibliography handling"""
     print(f'Using fallback compilation for {tex_filename}...')
 
     # Change to document directory for compilation
     original_cwd = os.getcwd()
     os.chdir(document_dir)
     try:
-        # Run xelatex (twice for proper references)
+        # Run proper LaTeX compilation cycle with bibliography
         import subprocess
         result1 = subprocess.run(['xelatex', '-interaction=nonstopmode', tex_filename],
                               capture_output=True, text=True, encoding='utf-8', errors='ignore')
@@ -512,8 +512,10 @@ def translate_dir(dir, options):
         if basename in complete_texs:
             continue
         os.remove(f'{basename}.tex')
+    # Only remove .bbl files that don't match the complete tex files
     for basename in bbls:
-        os.remove(f'{basename}.bbl')
+        if basename not in complete_texs:
+            os.remove(f'{basename}.bbl')
     if options.notranslate:
         return complete_texs
     for filename in complete_texs:
@@ -567,8 +569,11 @@ def main(args=None, require_updated=False):
         sys.exit(0)
 
     # Only check for updates if doing actual translation work and network check is not disabled
-    if not hasattr(options, 'no_network_check') or not options.no_network_check:
-        utils.check_update(require_updated=require_updated)
+    try:
+        if not hasattr(options, 'no_network_check') or not options.no_network_check:
+            utils.check_update(require_updated=require_updated)
+    except Exception:
+        print("Warning: Could not check for updates (network error). Continuing anyway...")
 
     # Handle compile options: if --no-compile is specified, disable compilation
     if hasattr(options, 'no_compile') and options.no_compile:
