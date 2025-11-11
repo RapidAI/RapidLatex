@@ -90,6 +90,79 @@ def add_bbl(tex):
     print(content, file=open(path_tex, "w", encoding='utf-8'))
 
 
+def ensure_bibliographystyle(tex_path):
+    """
+    Check if \bibliographystyle command exists in the tex file.
+    If not, add a default one before \bibliography command.
+    """
+    encoding = get_file_encoding(tex_path)
+    content = open(tex_path, encoding=encoding).read()
+
+    # Check if \bibliographystyle already exists (look for actual pattern with backslash)
+    # Need to check for both single and double backslash versions
+    needs_bibliographystyle = True
+    for pattern in [r'\\bibliographystyle{', r'\\\\bibliographystyle{']:
+        if pattern in content:
+            needs_bibliographystyle = False
+            break
+
+    # Fix any double backslashes in bibliographystyle commands
+    if not needs_bibliographystyle:
+        content = content.replace(r'\\bibliographystyle{', r'\bibliographystyle{')
+
+    # Check if \bibliography exists
+    if 'bibliography{' not in content.lower():
+        return False  # No bibliography, nothing to fix
+
+    # Find position of bibliography
+    bib_pos = content.lower().find('bibliography{')
+    if bib_pos < 0:
+        return False
+
+    # Fix any double backslashes in bibliography commands first
+    content = content.replace(r'\\bibliography{', r'\bibliography{')
+
+    # Re-find position of bibliography in case we fixed backslashes
+    bib_pos = content.lower().find('bibliography{')
+    if bib_pos < 0:
+        return False
+
+    # Check if \bibliography has correct backslash (fix if missing)
+    has_backslash = bib_pos > 0 and content[bib_pos-1] == '\\'
+
+    if not has_backslash:
+        print(f'Warning: \\bibliography command missing backslash - Adding backslash...')
+        content = content[:bib_pos] + '\\' + content[bib_pos:]
+        bib_pos += 1  # Adjust position after adding backslash
+
+    # Only add bibliographystyle if it doesn't exist yet
+    if needs_bibliographystyle:
+        # Create a mock match object
+        class MockMatch:
+            def __init__(self, pos):
+                self.start = lambda: pos
+        bib_match = MockMatch(bib_pos)
+
+        # Add default \bibliographystyle before \bibliography
+        # Use 'plain' as default, or 'IEEEtran' if IEEE related
+        default_style = 'IEEEtran' if 'IEEE' in content else 'plain'
+
+        print(f'Warning: No \\bibliographystyle found in {tex_path}')
+        print(f'Adding default \\bibliographystyle{{{default_style}}} before \\bibliography')
+
+        # Insert \bibliographystyle before \bibliography
+        bib_start = bib_match.start()
+        style_command = f'\\bibliographystyle{{{default_style}}}\n'
+
+        content = content[:bib_start] + style_command + content[bib_start:]
+
+    # Write back the file
+    with open(tex_path, 'w', encoding=encoding) as f:
+        f.write(content)
+
+    return True
+
+
 def generate_bbl_from_bib(tex_path):
     """
     Generate .bbl file from .bib references.

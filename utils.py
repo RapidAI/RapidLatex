@@ -208,7 +208,7 @@ def process_options(options):
             print('tencent engine does not support multi-threading, set to 1')
 
     if options.engine == 'openai':
-        haskey = config.openai_api_key is not None
+        haskey = bool(config.openai_api_key)
         if not haskey:
             print('Please save OpenAI API key first by')
             print('translate_tex --setopenaikey')

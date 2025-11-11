@@ -150,6 +150,28 @@ class LatexTranslator:
             if text_original.upper() == text_original:
                 result = text_original
             else:
+                # ENHANCED: Protect XMATHX placeholders and associated command names from translation
+                import re
+                xm_placeholders = re.findall(r'XMATHX[A-Z_]*', text_original)
+                if xm_placeholders:
+                    # Ensure XMATHX patterns are in skip_commands for protection
+                    for placeholder in xm_placeholders:
+                        base_pattern = placeholder.split('_')[0]  # Get 'XMATHX' part
+                        if base_pattern not in config.skip_commands:
+                            config.skip_commands.append(base_pattern)
+                        if placeholder not in config.skip_commands:
+                            config.skip_commands.append(placeholder)
+
+                    # NEW: Also protect LaTeX command names that follow XMATHX placeholders
+                    # This prevents commands like "bibliographystyle" from being translated
+                    # when they appear after XMATHXBS placeholders
+                    command_pattern = r'XMATHX[A-Z_]*\s+(\w+)(?:\s*\{[^}]*\})*'
+                    command_matches = re.findall(command_pattern, text_original)
+                    if command_matches:
+                        for command_name in command_matches:
+                            if command_name not in config.skip_commands:
+                                config.skip_commands.append(command_name)
+
                 result = self.translator.translate(text_original)
             parts_translated.append(result)
         text_translated = '\n'.join(parts_translated)
@@ -166,6 +188,30 @@ class LatexTranslator:
         '''
         Translate a latex paragraph, which means that it could contain latex objects
         '''
+
+        # ENHANCED: Apply bibliography formatting fix BEFORE translation
+        # This ensures missing backslashes are added so object recognition can properly protect commands
+        def fix_bibliography_formatting(text):
+            """Fix bibliography formatting issues in LaTeX text."""
+            # Fix missing backslashes on bibliography commands
+            text = re.sub(r'(?<!\\)(bibliographystyle|bibliography)(?=\s*\{)', r'\\\1', text)
+
+            # Fix double backslash issues
+            text = re.sub(r'\\\\(bibliographystyle|bibliography)', r'\\\1', text)
+            # Also handle the case where we have space + double backslash
+            text = re.sub(r'\\ \\(bibliographystyle|bibliography)', r'\\\1', text)
+
+            # Fix spaces after backslashes
+            text = re.sub(r'\\\s+(bibliographystyle|bibliography)', r'\\\1', text)
+            text = re.sub(r'\\ (bibliographystyle|bibliography)', r'\\\1', text)
+
+            # Fix extra spaces inside braces for bibliography commands
+            text = re.sub(r'(\\(?:bibliographystyle|bibliography)\s*\{)\s*([^}]+?)\s*(\})',
+                          lambda m: m.group(1) + m.group(2).strip() + m.group(3), text)
+
+            return text
+
+        latex_original_paragraph = fix_bibliography_formatting(latex_original_paragraph)
 
         # remove format about textbf, emph and textit
         for format_name in format_list:
@@ -419,6 +465,113 @@ class LatexTranslator:
 
         latex_translated = process_latex.recover_special(latex_translated)
         latex_translated = process_latex.recover_accent(latex_translated)
+
+        # ENHANCED: Fix bibliography formatting issues
+        # This addresses double backslashes, spaces after backslashes, extra spaces in braces, etc.
+        def fix_bibliography_formatting(text):
+            """Fix bibliography formatting issues in LaTeX text."""
+            # Fix double backslash issues
+            text = re.sub(r'\\\\(bibliographystyle|bibliography)', r'\\\1', text)
+            # Also handle the case where we have space + double backslash
+            text = re.sub(r'\\ \\(bibliographystyle|bibliography)', r'\\\1', text)
+
+            # Fix spaces after backslashes
+            text = re.sub(r'\\\s+(bibliographystyle|bibliography)', r'\\\1', text)
+            text = re.sub(r'\\ (bibliographystyle|bibliography)', r'\\\1', text)
+
+            # Fix missing backslashes on bibliography commands
+            text = re.sub(r'(?<!\\)(bibliographystyle|bibliography)(?=\s*\{)', r'\\\1', text)
+
+            # Fix extra spaces inside braces for bibliography commands
+            text = re.sub(r'(\\(?:bibliographystyle|bibliography)\s*\{)\s*([^}]+?)\s*(\})',
+                          lambda m: m.group(1) + m.group(2).strip() + m.group(3), text)
+
+            # Remove duplicate bibliography commands (keep first occurrence)
+            lines = text.split('\n')
+            seen_commands = set()
+            cleaned_lines = []
+
+            for line in lines:
+                # Check if this line contains a bibliography command
+                if re.search(r'\\(?:bibliographystyle|bibliography)\s*\{[^}]*\}', line):
+                    # Extract the command and its argument
+                    match = re.search(r'\\(bibliographystyle|bibliography)\s*\{([^}]*)\}', line)
+                    if match:
+                        command = match.group(1)
+                        argument = match.group(2)
+                        command_key = f"{command}:{argument}"
+
+                        # Only keep the first occurrence
+                        if command_key not in seen_commands:
+                            seen_commands.add(command_key)
+                            cleaned_lines.append(line)
+                        # Skip duplicates
+                        continue
+
+                # Keep non-bibliography lines
+                cleaned_lines.append(line)
+
+            return '\n'.join(cleaned_lines)
+
+        latex_translated = fix_bibliography_formatting(latex_translated)
+
+        # Remove duplicate bibliography commands (keep first occurrence)
+        def remove_duplicate_bibliography_commands(text):
+            """Remove duplicate bibliography commands, keeping only the first occurrence."""
+            lines = text.split('\n')
+            seen_commands = set()
+            cleaned_lines = []
+
+            for line in lines:
+                # Check if this line contains a bibliography command
+                if re.search(r'\\(?:bibliographystyle|bibliography)\s*\{[^}]*\}', line):
+                    # Extract the command and its argument
+                    match = re.search(r'\\(bibliographystyle|bibliography)\s*\{([^}]*)\}', line)
+                    if match:
+                        command = match.group(1)
+                        argument = match.group(2)
+                        command_key = f"{command}:{argument}"
+
+                        # Only keep the first occurrence
+                        if command_key not in seen_commands:
+                            seen_commands.add(command_key)
+                            cleaned_lines.append(line)
+                        # Skip duplicates
+                        continue
+
+                # Keep non-bibliography lines
+                cleaned_lines.append(line)
+
+            return '\n'.join(cleaned_lines)
+
+        latex_translated = remove_duplicate_bibliography_commands(latex_translated)
+
+        # ENHANCED: Fix color model translation issues
+        def fix_color_model_translation(text):
+            """Fix color model names that were incorrectly translated with spaces"""
+            # Fix RGB color model - remove extra spaces that were added during translation
+            text = re.sub(r'\{\s*RGB\s*\}', '{RGB}', text)
+
+            # Fix HTML color model
+            text = re.sub(r'\{\s*HTML\s*\}', '{HTML}', text)
+
+            # Fix other color models that might have been affected
+            color_models = ['RGB', 'CMYK', 'HSB', 'HSL', 'Gray', 'wave']
+            for model in color_models:
+                # Match translated model names with spaces around them
+                pattern = rf'\{{\s*{model}\s*\}}'
+                replacement = f'{{{model}}}'
+                text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+
+            # Fix color values that have extra spaces
+            text = re.sub(r'\{\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\}', r'{\1,\2,\3}', text)
+
+            # Fix HTML color values with extra spaces
+            text = re.sub(r'\{\s*([A-F0-9]+)\s*\}', r'{\1}', text)
+
+            return text
+
+        latex_translated = fix_color_model_translation(latex_translated)
 
         # Optimize table widths to prevent overflow
         try:

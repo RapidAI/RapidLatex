@@ -360,31 +360,64 @@ def fallback_compilation(document_dir, tex_filename, document_name, output_dir):
     has_bib_files = len([f for f in os.listdir('.') if f.endswith('.bib')]) > 0
 
     try:
-        # Step 1: First xelatex run (generates .aux file with citation info)
-        print('Running xelatex (1/3)...')
-        result1 = subprocess.run(['xelatex', '-interaction=nonstopmode', tex_filename],
-                              capture_output=True, text=True, encoding='utf-8', errors='ignore')
+        # First, clean any previous compilation files to avoid issues
+        clean_files = [
+            f"{os.path.splitext(tex_filename)[0]}.aux",
+            f"{os.path.splitext(tex_filename)[0]}.bbl",
+            f"{os.path.splitext(tex_filename)[0]}.blg",
+            f"{os.path.splitext(tex_filename)[0]}.log",
+            f"{os.path.splitext(tex_filename)[0]}.toc",
+            f"{os.path.splitext(tex_filename)[0]}.out"
+        ]
+        for f in clean_files:
+            if os.path.exists(f):
+                os.remove(f)
+                print(f"Cleaned old compilation file: {os.path.basename(f)}")
 
-        # Step 2: Run bibtex if .bib files exist
-        if has_bib_files:
-            print('Running bibtex...')
-            base_name = os.path.splitext(tex_filename)[0]
-            result_bib = subprocess.run(['bibtex', f'{base_name}.aux'],
-                                      capture_output=True, text=True, encoding='utf-8', errors='ignore')
-            if result_bib.returncode != 0:
-                print(f'Warning: bibtex returned non-zero exit code')
-                if result_bib.stderr:
-                    print(f'Bibtex errors: {result_bib.stderr[-200:]}')
+        # Set up variables for compilation attempts and timeouts
+        xelatex_cmd_base = ['xelatex', '-interaction=nonstopmode', '-halt-on-error']
+        bibtex_cmd_base = ['bibtex', f'{os.path.splitext(tex_filename)[0]}.aux']
 
-        # Step 3: Second xelatex run (inserts bibliography and resolves references)
-        print('Running xelatex (2/3)...')
-        result2 = subprocess.run(['xelatex', '-interaction=nonstopmode', tex_filename],
-                              capture_output=True, text=True, encoding='utf-8', errors='ignore')
+        try:
+            # Step 1: First xelatex run (generates .aux file with citation info)
+            print('Running xelatex (1/3)...')
+            result1 = subprocess.run(
+                xelatex_cmd_base + ['-no-pdf', tex_filename],
+                capture_output=True, text=True, encoding='utf-8', errors='ignore', timeout=300
+            )
 
-        # Step 4: Final xelatex run (updates reference numbers)
-        print('Running xelatex (3/3)...')
-        result3 = subprocess.run(['xelatex', '-interaction=nonstopmode', tex_filename],
-                              capture_output=True, text=True, encoding='utf-8', errors='ignore')
+            # Step 2: Run bibtex if .bib files exist and first xelatex succeeded
+            result_bib = None
+            if has_bib_files and result1.returncode == 0:
+                print('Running bibtex...')
+                result_bib = subprocess.run(
+                    bibtex_cmd_base,
+                    capture_output=True, text=True, encoding='utf-8', errors='ignore', timeout=120
+                )
+                if result_bib.returncode != 0:
+                    print(f'Warning: bibtex returned non-zero exit code')
+                    if result_bib.stderr:
+                        print(f'Bibtex errors: {result_bib.stderr[-200:]}')
+
+            # Step 3: Second xelatex run (inserts bibliography and resolves references)
+            print('Running xelatex (2/3)...')
+            result2 = subprocess.run(
+                xelatex_cmd_base + [tex_filename],
+                capture_output=True, text=True, encoding='utf-8', errors='ignore', timeout=300
+            )
+
+            # Step 4: Final xelatex run (updates reference numbers)
+            print('Running xelatex (3/3)...')
+            result3 = subprocess.run(
+                xelatex_cmd_base + [tex_filename],
+                capture_output=True, text=True, encoding='utf-8', errors='ignore', timeout=300
+            )
+        except subprocess.TimeoutExpired:
+            print(f'Error: LaTeX compilation timed out after 5 minutes per run')
+            return False
+        except Exception as e:
+            print(f'Error: Unexpected error during compilation: {e}')
+            return False
 
         # Check results
         if all(r.returncode == 0 for r in [result1, result2, result3]):
@@ -551,6 +584,10 @@ def translate_dir(dir, options):
     if len(complete_texs) > 0 and len(bibs) > 0:
         print(f'Found {len(bibs)} .bib files: {[f+".bib" for f in bibs]}')
         print('References will be processed by LaTeX during compilation')
+        # Ensure \bibliographystyle command exists for each tex file
+        for tex in complete_texs:
+            tex_path = f'{tex}.tex'
+            process_file.ensure_bibliographystyle(tex_path)
     if len(complete_texs) == 0:
         return False
     for basename in texs:
@@ -567,6 +604,13 @@ def translate_dir(dir, options):
         print(f'Processing {filename} using {options.engine.upper()} translation engine')
         file_path = f'{filename}.tex'
         translate_single_tex_file(file_path, file_path, options.engine, options.l_from, options.l_to, options.debug, options.nocache, options.threads)
+
+    # After translation, ensure \bibliographystyle exists if .bib files are present
+    if len(bibs) > 0:
+        for tex in complete_texs:
+            tex_path = f'{tex}.tex'
+            process_file.ensure_bibliographystyle(tex_path)
+
     return complete_texs
 
 

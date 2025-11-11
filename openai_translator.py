@@ -10,6 +10,10 @@ class OpenAITranslator:
     def __init__(self, api_key: str, base_url: str = "https://api.openai.com/v1",
                  model: str = "gpt-3.5-turbo", max_tokens: int = 2000,
                  temperature: float = 0.3, chunk_size: int = 3000):
+        # Ensure API key is provided
+        if not api_key:
+            raise ValueError("OpenAI API key must be provided")
+
         self.api_key = api_key
         self.base_url = base_url
         self.model = model
@@ -154,15 +158,26 @@ Translated text (strictly faithful to original):"""
         if not chunk.strip():
             return chunk
 
-        # Protect math formula placeholders (XMATHX_*)
+        # Protect math formula placeholders (XMATHX_* and XMATHXBS)
+        # Enhanced to protect entire LaTeX commands that follow XMATHX placeholders
         import re
-        placeholder_pattern = r'XMATHX_\d+(?:_\d+)*'
+        placeholder_pattern = r'XMATHX_\d+(?:_\d+)*|XMATHXBS'
         placeholders = re.findall(placeholder_pattern, chunk)
+
+        # Also protect entire LaTeX command structures that follow XMATHX placeholders
+        # This includes patterns like "XMATHXBS bibliographystyle {IEEEtran}"
+        # Enhanced to handle multiple commands in the same line
+        extended_pattern = r'XMATHXBS\s+\w+(?:\s*\{[^}]*\})*(?:\s+\w+(?:\s*\{[^}]*\})*)*'
+        extended_placeholders = re.findall(extended_pattern, chunk)
+
+        # Combine all placeholders and sort by length (descending) to handle overlapping patterns
+        # Longer patterns should be replaced first to avoid leaving parts unprotected
+        all_placeholders = sorted(list(set(placeholders + extended_placeholders)), key=len, reverse=True)
 
         # Create a mapping of placeholders to temporary safe tokens
         placeholder_map = {}
         protected_chunk = chunk
-        for i, placeholder in enumerate(placeholders):
+        for i, placeholder in enumerate(all_placeholders):
             safe_token = f"__MATH_PLACEHOLDER_{i}__"
             placeholder_map[safe_token] = placeholder
             protected_chunk = protected_chunk.replace(placeholder, safe_token)
@@ -216,8 +231,16 @@ Translated text (strictly faithful to original):"""
                 raise ValueError("Invalid response format from OpenAI API")
 
         except requests.exceptions.RequestException as e:
-            print(f"OpenAI API request failed: {e}")
-            # Fallback to original text if API fails
+            error_msg = str(e)
+            print(f"OpenAI API request failed: {error_msg}")
+
+            # Special handling for authentication errors
+            if "401" in error_msg or "Unauthorized" in error_msg:
+                print("Authentication error: Please check if your OpenAI API key is correct")
+                # For authentication errors, we shouldn't fall back - we should exit
+                raise
+
+            # Fallback to original text for other API errors
             return chunk
         except (KeyError, ValueError) as e:
             print(f"Failed to parse OpenAI API response: {e}")

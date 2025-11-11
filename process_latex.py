@@ -69,8 +69,8 @@ special_character_forward = {
 special_character_backward = {special_character_forward[key]: key for key in special_character_forward}
 assert len(set(special_character_forward.values())) == len(special_character_forward)
 
-environment_list = ['abstract', 'acknowledgments', 'itemize', 'enumerate', 'description', 'list', 'proof', 'quote', 'spacing']
-command_list = ['section', 'subsection', 'subsubsection', 'caption', 'subcaption', 'footnote', 'paragraph']
+environment_list = ['abstract', 'acknowledgments', 'itemize', 'enumerate', 'description', 'list', 'proof', 'quote', 'spacing', 'appendices']
+command_list = ['section', 'subsection', 'subsubsection', 'caption', 'subcaption', 'footnote', 'paragraph', 'bibliographystyle', 'bibliography']
 format_list = ['textbf', 'textit', 'emph']
 replace_newcommand_list = ['equation', 'array', 'displaymath', 'align', 'multiple', 'gather', 'theorem', 'textcolor'] + environment_list + command_list
 
@@ -144,8 +144,8 @@ def replace_latex_objects(text, brace=True, command_simple=True):
         pattern = regex.compile(regex_symbol, regex.DOTALL)
         while pattern.search(text):
             latex_obj = pattern.search(text).group()
-            replaced_objs.append(f' {latex_obj} ')
-            text = pattern.sub(' ' + variable_code(count) + ' ', text, 1)
+            replaced_objs.append(latex_obj)
+            text = pattern.sub(variable_code(count), text, 1)
             count += 1
 
     text = modify_text(text, modify_before)

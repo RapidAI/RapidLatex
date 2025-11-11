@@ -56,7 +56,7 @@ class Config:
     custom_environments = []
     custom_commands = []
     skip_environments = ['equation', 'align', 'gather', 'displaymath', 'eqnarray']  # These should not be translated
-    skip_commands = ['ref', 'label', 'cite', 'bibitem']  # These should not be translated
+    skip_commands = ['ref', 'label', 'cite', 'bibitem', 'bibliographystyle', 'bibliography', 'XMATHX', 'XMATHXBS']  # These should not be translated
 
     def __init__(self):
         self.load()
