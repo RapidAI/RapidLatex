@@ -573,6 +573,52 @@ class LatexTranslator:
 
         latex_translated = fix_color_model_translation(latex_translated)
 
+        # ENHANCED: Fix LaTeX unit preservation
+        def fix_latex_units(text):
+            """Fix LaTeX unit preservation issues"""
+            import re
+            # Preserve common LaTeX units that might have been translated in commands
+            # Focus on the specific case we found first
+            text = re.sub(r'(\\vskip\s+[\d.]+)\s*英寸', r'\1in', text, flags=re.IGNORECASE)
+            text = re.sub(r'(\\hskip\s+[\d.]+)\s*英寸', r'\1in', text, flags=re.IGNORECASE)
+            text = re.sub(r'(\\skip\s+[\d.]+)\s*英寸', r'\1in', text, flags=re.IGNORECASE)
+            text = re.sub(r'(\\kern\s+[\d.]+)\s*英寸', r'\1in', text, flags=re.IGNORECASE)
+            text = re.sub(r'(\\hfil\s+[\d.]+)\s*英寸', r'\1in', text, flags=re.IGNORECASE)
+            text = re.sub(r'(\\vfil\s+[\d.]+)\s*英寸', r'\1in', text, flags=re.IGNORECASE)
+            text = re.sub(r'(\\hfill\s+[\d.]+)\s*英寸', r'\1in', text, flags=re.IGNORECASE)
+            text = re.sub(r'(\\vfill\s+[\d.]+)\s*英寸', r'\1in', text, flags=re.IGNORECASE)
+
+            # General fixes for any other places with units
+            text = re.sub(r'([\d.]+)\s*英寸', r'\1in', text, flags=re.IGNORECASE)
+            text = re.sub(r'([\d.]+)\s*厘米', r'\1cm', text, flags=re.IGNORECASE)
+            text = re.sub(r'([\d.]+)\s*毫米', r'\1mm', text, flags=re.IGNORECASE)
+            text = re.sub(r'([\d.]+)\s*点', r'\1pt', text, flags=re.IGNORECASE)
+            text = re.sub(r'([\d.]+)\s*派卡', r'\1pc', text, flags=re.IGNORECASE)
+
+            return text
+
+        latex_translated = fix_latex_units(latex_translated)
+
+        # ENHANCED: Fix XeLaTeX compatibility issues
+        def fix_xelatex_compatibility(text):
+            """Fix XeLaTeX compatibility issues"""
+            import re
+            modifications = [
+                # Remove \pdfoutput=1 command which is only for pdfTeX
+                (r'\\pdfoutput=1\s*\n?', ''),
+                # Remove inputenc package (XeLaTeX doesn't need it)
+                (r'\\usepackage\[utf8\]\{inputenc\}\s*\n?', ''),
+                # Remove fontenc package (XeLaTeX doesn't need it)
+                (r'\\usepackage\[T1\]\{fontenc\}\s*\n?', ''),
+            ]
+
+            for pattern, replacement in modifications:
+                text = re.sub(pattern, replacement, text, flags=re.MULTILINE)
+
+            return text
+
+        latex_translated = fix_xelatex_compatibility(latex_translated)
+
         # Optimize table widths to prevent overflow
         try:
             from table_optimizer import optimize_all_tables

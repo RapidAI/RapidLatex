@@ -61,6 +61,8 @@ def merge_complete(tex):
     print(content, file=open(path, "w", encoding='utf-8'))
 
 
+import os
+
 def add_bbl(tex):
     '''
     Modified to preserve \input{*.bbl} commands without expanding bibliography content.
@@ -68,6 +70,36 @@ def add_bbl(tex):
     '''
     path_tex = f'{tex}.tex'
     path_bbl = f'{tex}.bbl'
+
+    # Try to extract bbl from input tar if it's missing
+    if not os.path.exists(path_bbl):
+        import tarfile
+        import shutil
+
+        # Check if input tar exists
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        tex_dir = os.path.dirname(tex)
+        basename = os.path.basename(tex)
+
+        # Try to extract bbl from the temporary directory or input tar
+        # First check if we're in output directory
+        if 'output' in tex_dir:
+            # Extract arxiv id from output path
+            arxiv_id = basename
+            input_tar_path = os.path.join(base_dir, 'input', f'{arxiv_id}.tar.gz')
+        else:
+            # In temp directory during processing
+            input_tar_path = None
+
+        if input_tar_path and os.path.exists(input_tar_path):
+            print(f'Looking for bbl file in input tar...')
+            with tarfile.open(input_tar_path, 'r:gz') as tar:
+                for member in tar.getmembers():
+                    if member.name.endswith('.bbl'):
+                        print(f'Found {member.name} in input tar, extracting...')
+                        tar.extract(member, path=os.path.dirname(path_bbl))
+                        print('Successfully extracted bbl file from input tar!')
+                        break
 
     if not os.path.exists(path_bbl):
         print(f'Warning: {path_bbl} not found, but preserving \input commands anyway')
@@ -84,10 +116,23 @@ def add_bbl(tex):
     if bbl_input_pattern.search(content):
         print(f'Found \\input{{*.bbl}} command in {path_tex}, preserving it without expansion')
     else:
-        print(f'No \\input{{*.bbl}} command found in {path_tex}, but .bbl file exists')
+        print(f'No \\input{{*.bbl}} command found in {path_tex}, adding it to include bibliography content')
+        # Find the bibliography command and replace it with input command
+        bib_pattern = re.compile(r'\\bibliography\{[^}]*\}', re.IGNORECASE)
+        if bib_pattern.search(content):
+            content = bib_pattern.sub(r'\\input{main.bbl}', content)
+        else:
+            # If no bibliography command found, add it at the end before \end{document}
+            end_doc_pattern = re.compile(r'\\end\{document\}', re.IGNORECASE)
+            if end_doc_pattern.search(content):
+                content = end_doc_pattern.sub(r'\\input{main.bbl}\n\\end{document}', content)
+            else:
+                # Fallback: add at the end of the file
+                content += '\n\\input{main.bbl}\n'
 
-    # Write back the content with \bibliographystyle commented out but preserving \input{*.bbl}
-    print(content, file=open(path_tex, "w", encoding='utf-8'))
+    # Write back the content with \bibliographystyle commented out and \input{*.bbl} added if needed
+    with open(path_tex, "w", encoding='utf-8') as f:
+        f.write(content)
 
 
 def ensure_bibliographystyle(tex_path):
