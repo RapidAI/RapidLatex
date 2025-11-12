@@ -636,8 +636,10 @@ def main(args=None, require_updated=False):
     you can do e.g `main(['2205.15510', '-o', 'output.zip'])`
     '''
     import argparse
+    import sys
     parser = argparse.ArgumentParser()
     parser.add_argument("number", nargs='?', type=str, help='arxiv number, local directory path, or path to local archive file (.zip, .tar.gz, .tgz, .tar, .tar.bz2, .tbz2, .tar.xz, .txz)')
+    parser.add_argument("-f", "--file", type=str, help='file containing arXiv numbers, one per line')
     parser.add_argument("-o", type=str, help='output path')
     parser.add_argument("--from_dir", action='store_true')
     parser.add_argument("--notranslate", action='store_true')  # debug option
@@ -650,6 +652,43 @@ def main(args=None, require_updated=False):
     utils.add_arguments(parser)
     options = parser.parse_args(args)
     utils.process_options(options)
+
+    # Handle batch processing from file
+    if options.file:
+        # Read arXiv IDs from file
+        with open(options.file, 'r', encoding='utf-8') as f:
+            arxiv_ids = [line.strip() for line in f if line.strip()]
+
+        # Process each arXiv ID
+        for idx, arxiv_id in enumerate(arxiv_ids):
+            print(f"\n{'='*60}")
+            print(f"Processing arXiv ID {idx+1}/{len(arxiv_ids)}: {arxiv_id}")
+            print('='*60)
+
+            # Create a new argument list for this ID
+            id_args = args.copy() if args else []
+
+            # Remove any existing number argument
+            if len(id_args) > 0 and not id_args[0].startswith('-'):
+                id_args.pop(0)
+
+            # Add the current arXiv ID as the number argument
+            id_args.insert(0, arxiv_id)
+
+            # Call main recursively for each ID
+            try:
+                result = main(id_args, require_updated=require_updated)
+                print(f"\n{'='*60}")
+                print(f"Result for {arxiv_id}: {'Success' if result else 'Failed'}")
+            except Exception as e:
+                print(f"\n{'='*60}")
+                print(f"Error processing {arxiv_id}: {e}")
+                import traceback
+                traceback.print_exc()
+
+            print('='*60)
+
+        sys.exit(0)
 
     # Handle input directory management options (skip version check for these)
     if options.list_input:
