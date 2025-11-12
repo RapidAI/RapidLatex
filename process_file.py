@@ -189,8 +189,8 @@ def ensure_bibliographystyle(tex_path):
         bib_match = MockMatch(bib_pos)
 
         # Add default \bibliographystyle before \bibliography
-        # Use 'plain' as default, or 'IEEEtran' if IEEE related
-        default_style = 'IEEEtran' if 'IEEE' in content else 'plain'
+        # Use 'plainnat' as default for author-year citations, or 'IEEEtran' if IEEE related
+        default_style = 'IEEEtran' if 'IEEE' in content else 'plainnat'
 
         print(f'Warning: No \\bibliographystyle found in {tex_path}')
         print(f'Adding default \\bibliographystyle{{{default_style}}} before \\bibliography')

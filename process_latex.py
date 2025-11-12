@@ -161,7 +161,19 @@ def recover_latex_objects(text, replaced_objs, tolerate_error=False):
         index = int(''.join(digit_str.split('_')))
         matched_indices.append(index)
         if index < nobjs:
-            return replaced_objs[index]
+            # Remove translation quality note from inside LaTeX commands
+            content = replaced_objs[index]
+
+            # Remove Chinese translation note
+            if "（严格忠实于原文的翻译：）" in content:
+                content = content.replace("（严格忠实于原文的翻译：）", "").strip()
+
+            # Remove English translation note
+            import re
+            content = re.sub(r'\s*\(strictly faithful to original\):?\s*', '', content)
+
+            modified_content = content
+            return modified_content
         else:
             if test_environment:
                 assert tolerate_error
