@@ -155,11 +155,17 @@ def replace_latex_objects(text, brace=True, command_simple=True):
 def recover_latex_objects(text, replaced_objs, tolerate_error=False):
     # recover the latex objects from "replace_latex_objects"
     nobjs = len(replaced_objs)
-    matched_indices = []
+    matched_indices = set()
 
     def get_obj(digit_str):
         index = int(''.join(digit_str.split('_')))
-        matched_indices.append(index)
+
+        # Check if this is the first time we're processing this object
+        is_first_process = index not in matched_indices
+
+        # Always record that we processed this object
+        matched_indices.add(index)
+
         if index < nobjs:
             # Remove translation quality note from inside LaTeX commands
             content = replaced_objs[index]
@@ -171,6 +177,75 @@ def recover_latex_objects(text, replaced_objs, tolerate_error=False):
             # Remove English translation note
             import re
             content = re.sub(r'\s*\(strictly faithful to original\):?\s*', '', content)
+
+            # Handle wide tables automatically - only once per object
+            import re
+            if is_first_process:
+                # Check if this is a table environment (tabular, tabularx, longtable, tabulary)
+                table_pattern = r'\\begin{(tabular|tabularx|longtable|tabulary|array)}{([^}]*)}'
+                table_match = re.search(table_pattern, content)
+                if table_match:
+                    env_name = table_match.group(1)
+                    col_spec = table_match.group(2)
+                    # Count number of columns, ignoring vertical lines and spaces
+                    num_cols = len(re.sub(r'[|\s]', '', col_spec))
+
+                    # For wide tables (more than 6 columns), make them smaller with progressive sizing
+                    if num_cols > 6:
+                        # Determine font size and tab spacing based on number of columns
+                        if num_cols <= 10:
+                            font_command = r'\\small'
+                            tab_spacing = r'\\setlength{\\tabcolsep}{0.4em}'
+                        elif num_cols <= 20:
+                            font_command = r'\\footnotesize'
+                            tab_spacing = r'\\setlength{\\tabcolsep}{0.3em}'
+                        elif num_cols <= 25:  # 21-25 columns - very wide
+                            font_command = r'\\tiny'
+                            tab_spacing = r'\\setlength{\\tabcolsep}{0.1em}'
+                        else:  # 25+ columns - extreme case
+                            font_command = r'\\tiny'
+                            tab_spacing = r'\\setlength{\\tabcolsep}{0.05em}'
+
+                        # Create the full command we want to add
+                        full_table_command = font_command + tab_spacing + r'\\begin{' + env_name + r'}'
+
+                        # Check if we've already added our full command
+                        import re
+                        has_full_command = full_table_command in content
+
+                        # Check if we already have any font or spacing commands in front of begin{tabular}
+                        # This prevents repeated additions
+                        has_commands_before_begin = bool(re.search(r'\\(small|footnotesize|scriptsize|tiny|setlength).*?\\begin{' + env_name + r'}', content))
+
+                        # Check if we already have resizebox
+                        has_resizebox = r'\\resizebox' in content
+
+                        if not has_full_command and not has_commands_before_begin and not has_resizebox:
+                            # Check if any font command is already present (with optional whitespace)
+                            font_command_regex = re.compile(r'\\(small|footnotesize|scriptsize|tiny)\s*')
+                            has_font = bool(font_command_regex.search(content))
+
+                            # Check if tab spacing is already present
+                            has_tab_spacing = r'\\setlength{\\tabcolsep}' in content
+
+                            # First apply font and spacing changes
+                            if has_tab_spacing:
+                                # If there's already tab spacing, just add the font command before begin{tabular}
+                                # Replace the begin{tabular} command with font command + begin{tabular}
+                                content = re.sub(r'\\begin{' + env_name + r'}', font_command + r'\\begin{' + env_name + r'}', content)
+                                # And reduce the tab spacing to our smaller value
+                                content = re.sub(r'\\setlength{\\tabcolsep}{(.*?)em}', tab_spacing, content)
+                            else:
+                                # If no tab spacing, add both font command and tab spacing
+                                content = re.sub(r'\\begin{' + env_name + r'}', full_table_command, content)
+
+                            # Now wrap the entire tabular environment in resizebox for wide tables
+                            # We'll do this for tables with 7 or more columns to handle wide content
+                            if num_cols >= 7:
+                                # Find and wrap the entire tabular environment in resizebox
+                                import re
+                                tabular_pattern = re.compile(r'\\begin{' + env_name + r'}(.*?)\\end{' + env_name + r'}', re.DOTALL)
+                                content = tabular_pattern.sub(r'\\resizebox{\\textwidth}{!}{\\begin{' + env_name + r'}\g<1>\\end{' + env_name + r'}}', content)
 
             modified_content = content
             return modified_content
