@@ -612,11 +612,27 @@ def translate_dir(dir, options):
         file_path = f'{filename}.tex'
         translate_single_tex_file(file_path, file_path, options.engine, options.l_from, options.l_to, options.debug, options.nocache, options.threads)
 
-    # After translation, ensure \bibliographystyle exists if .bib files are present
+    # After translation, ensure proper CMYK support if needed
+    for tex in complete_texs:
+        tex_path = f'{tex}.tex'
+        process_file.ensure_cmyk_support(tex_path)
+
+    # After translation, fix citations with trailing spaces
+    for tex in complete_texs:
+        tex_path = f'{tex}.tex'
+        process_file.fix_citations(tex_path)
+
+    # After translation, fix missing braces after gradient operators
+    for tex in complete_texs:
+        tex_path = f'{tex}.tex'
+        process_file.fix_nabla_braces(tex_path)
+
+    # After translation, ensure \\bibliographystyle exists if .bib files are present
     if len(bibs) > 0:
         for tex in complete_texs:
             tex_path = f'{tex}.tex'
             process_file.ensure_bibliographystyle(tex_path)
+
 
     return complete_texs
 

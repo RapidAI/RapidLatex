@@ -49,14 +49,14 @@ class Config:
 
     math_code = 'XMATHX'
     log_file = f'{app_dir}/translate_log'
-    raw_mularg_command_list = [('textcolor', 2, (1, ))]
-    mularg_command_list = [('textcolor', 2, (1, ))]
+    raw_mularg_command_list = [('textcolor', 2, (1, 2))]
+    mularg_command_list = [('textcolor', 2, (1, 2))]
 
     # Custom environment and command settings
     custom_environments = []
     custom_commands = []
     skip_environments = ['equation', 'align', 'gather', 'displaymath', 'eqnarray']  # These should not be translated
-    skip_commands = ['ref', 'label', 'cite', 'bibitem', 'bibliographystyle', 'bibliography', 'XMATHX', 'XMATHXBS']  # These should not be translated
+    skip_commands = ['ref', 'label', 'cite', 'citep', 'citet', 'bibitem', 'bibliographystyle', 'bibliography', 'XMATHX', 'XMATHXBS']  # These should not be translated
 
     def __init__(self):
         self.load()

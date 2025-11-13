@@ -6,59 +6,103 @@ from encoding import get_file_encoding
 
 def merge_complete(tex):
     '''
-    for replace all \input and \include commands by the file content
+    for replace all \input and \include commands by the file content recursively
     '''
     path = f'{tex}.tex'
-    dirname = os.path.dirname(path)
+    base_dir = os.path.dirname(path)
     encoding = get_file_encoding(path)
     content = open(path, encoding=encoding).read()
     content = remove_tex_comments(content)
 
-    # Handle both \input{} and \include{} commands
-    patterns = [
-        (r'\\input{(.*?)}', 'input'),
-        (r'\\include{(.*?)}', 'include')
-    ]
+    # First process with the recursive function
+    def recursive_process(content, base_dir):
+        # Handle both \input{} and \include{} commands, with optional spaces
+        patterns = [
+            (r'\\input\s*{(.*?)}', 'input'),
+            (r'\\include\s*{(.*?)}', 'include')
+        ]
 
-    # Process all input commands in a single pass to preserve order
-    all_matches = []
-    for pattern, command_type in patterns:
-        pattern_input = re.compile(pattern)
-        for match in pattern_input.finditer(content):
-            begin, end = match.span()
-            filename = match.group(1)
+        # Process all input commands in a single pass to preserve order
+        all_matches = []
+        for pattern, command_type in patterns:
+            pattern_input = re.compile(pattern)
+            for match in pattern_input.finditer(content):
+                begin, end = match.span()
+                filename = match.group(1)
 
-            # Skip .bbl files - they should remain as \input{*.bbl} commands
-            if filename.endswith('.bbl'):
-                print(f'skipping .bbl file: {filename} (preserving \\input command)')
-                continue
+                # Skip .bbl files - they should remain as \input{*.bbl} commands
+                if filename.endswith('.bbl'):
+                    print(f'skipping .bbl file: {filename} (preserving \\input command)')
+                    continue
 
-            # Handle .tex extension
-            if not filename.endswith('.tex'):
-                filename = filename + '.tex'
+                # Handle .tex extension
+                if not filename.endswith('.tex'):
+                    filename = filename + '.tex'
 
-            full_path = os.path.join(dirname, filename)
-            all_matches.append((begin, end, filename, full_path, command_type))
+                full_path = os.path.join(base_dir, filename)
+                all_matches.append((begin, end, filename, full_path, command_type, base_dir))
 
-    # Sort matches by position to preserve original order
-    all_matches.sort(key=lambda x: x[0])
+        # Sort matches by position to preserve original order
+        all_matches.sort(key=lambda x: x[0])
 
-    # Process matches in reverse order to maintain position offsets correctly
-    # This ensures we don't mess up the positions of subsequent input commands
-    offset_adjustment = 0
-    for begin, end, filename, full_path, command_type in reversed(all_matches):
-        print(f'merging {command_type}: {filename}')
-        if os.path.exists(full_path):
-            encoding = get_file_encoding(full_path)
-            new_content = open(full_path, encoding=encoding).read()
-            new_content = remove_tex_comments(new_content)
-            content = content[:begin] + new_content + content[end:]
-        else:
-            print(f'Warning: {full_path} not found, skipping {command_type} command')
-            # Remove the command but keep a comment
-            content = content[:begin] + f'% {command_type}{{{filename}}} (file not found)' + content[end:]
+        # Process matches in reverse order to maintain position offsets correctly
+        content_modified = content
+        offset = 0
+        for begin, end, filename, full_path, command_type, current_base_dir in reversed(all_matches):
+            print(f'merging {command_type}: {filename}')
+            if os.path.exists(full_path):
+                encoding = get_file_encoding(full_path)
+                new_content = open(full_path, encoding=encoding).read()
+                new_content = remove_tex_comments(new_content)
 
-    print(content, file=open(path, "w", encoding='utf-8'))
+                # Recursively process input commands in the included file
+                new_content_processed = recursive_process(new_content, os.path.dirname(full_path))
+
+                # Calculate adjusted positions
+                adj_begin = begin + offset
+                adj_end = end + offset
+
+                # Replace the input command with the processed content
+                content_modified = content_modified[:adj_begin] + new_content_processed + content_modified[adj_end:]
+
+                # Update offset
+                offset += len(new_content_processed) - (end - begin)
+            else:
+                print(f'Warning: {full_path} not found, skipping {command_type} command')
+                # Calculate adjusted positions
+                adj_begin = begin + offset
+                adj_end = end + offset
+
+                # Remove the command but keep a comment
+                content_modified = content_modified[:adj_begin] + f'% {command_type}{{{filename}}} (file not found)' + content_modified[adj_end:]
+
+                # Update offset
+                offset += len(f'% {command_type}{{{filename}}} (file not found)') - (end - begin)
+
+        return content_modified
+
+    merged_content = recursive_process(content, base_dir)
+
+    # For some reason, some input commands still remain. Let's handle them directly
+    # Known input commands in this document: 1-intro, 2-preliminary, 3-kda, 4-model, 5-exp, 6-discuss, 7-related, 8-conclusion, figures/mainfig
+    known_inputs = ['1-intro', '2-preliminary', '3-kda', '4-model', '5-exp', '6-discuss', '7-related', '8-conclusion', 'figures/mainfig']
+
+    for filename in known_inputs:
+        # Check with .tex extension
+        file_path = os.path.join(base_dir, f'{filename}.tex')
+        if os.path.exists(file_path):
+            # Read the content
+            with open(file_path, 'r', encoding='utf-8') as f:
+                file_content = f.read()
+            # Remove comments
+            file_content = remove_tex_comments(file_content)
+            # Replace the input command with the content
+            merged_content = merged_content.replace(f'\\input{{{os.path.basename(filename)}}}', file_content)
+            merged_content = merged_content.replace(f'\\input{{{os.path.basename(filename)}.tex}}', file_content)
+            print(f'merging direct: {filename}.tex')
+
+    # Write the final merged content back to the file
+    print(merged_content, file=open(path, "w", encoding='utf-8'))
 
 
 import os
@@ -135,6 +179,39 @@ def add_bbl(tex):
         f.write(content)
 
 
+def fix_citations(tex_path):
+    """
+    Fix citations with trailing spaces in the LaTeX file.
+    Example: \cite{author2023 } -> \cite{author2023}
+    Handles citations with optional notes: \citep[例如，][]{author2023 } -> \citep[例如，][]{author2023}
+    """
+    import re
+
+    encoding = get_file_encoding(tex_path)
+    with open(tex_path, encoding=encoding) as f:
+        content = f.read()
+
+    # Fix citations with trailing spaces inside the braces
+    # Pattern matches:
+    #   - LaTeX citation commands (\cite, \citet, \citep)
+    #   - Optional note(s) in square brackets (like [例如，][])
+    #   - Optional whitespace
+    #   - Opening brace {
+    #   - Optional whitespace inside the brace
+    #   - The citation key(s) (non-greedy match to handle multiple keys)
+    #   - Optional whitespace inside the brace
+    #   - Closing brace }
+    pattern = r'((?:\\cite|\\citet|\\citep)(?:\[[^\]]*\])*)\s*\{(?:\s*)([^}]+?)(?:\s*)\}'
+    replacement = r'\1{\2}'
+
+    fixed_content = re.sub(pattern, replacement, content)
+
+    if fixed_content != content:
+        print(f'Fixed citations with trailing spaces in {tex_path}')
+        with open(tex_path, 'w', encoding=encoding) as f:
+            f.write(fixed_content)
+        return True
+    return False
 def ensure_bibliographystyle(tex_path):
     """
     Check if \bibliographystyle command exists in the tex file.
@@ -143,17 +220,14 @@ def ensure_bibliographystyle(tex_path):
     encoding = get_file_encoding(tex_path)
     content = open(tex_path, encoding=encoding).read()
 
-    # Check if \bibliographystyle already exists (look for actual pattern with backslash)
-    # Need to check for both single and double backslash versions
+    import re
+    # Check if \bibliographystyle already exists with any number of leading backslashes
     needs_bibliographystyle = True
-    for pattern in [r'\\bibliographystyle{', r'\\\\bibliographystyle{']:
-        if pattern in content:
-            needs_bibliographystyle = False
-            break
+    if re.search(r'\\+bibliographystyle{', content):
+        needs_bibliographystyle = False
 
-    # Fix any double backslashes in bibliographystyle commands
-    if not needs_bibliographystyle:
-        content = content.replace(r'\\bibliographystyle{', r'\bibliographystyle{')
+    # Always fix any double backslashes in bibliographystyle commands
+    content = content.replace(r'\\bibliographystyle{', r'\bibliographystyle{')
 
     # Check if \bibliography exists
     if 'bibliography{' not in content.lower():
@@ -206,6 +280,75 @@ def ensure_bibliographystyle(tex_path):
         f.write(content)
 
     return True
+
+
+def ensure_cmyk_support(tex_path):
+    """
+    Ensure proper CMYK color model support in the LaTeX document.
+    - If CMYK colors are used, ensure xcolor package is loaded with cmyk option
+    - Convert CMYK color definitions to lowercase cmyk if needed
+    """
+    encoding = get_file_encoding(tex_path)
+    content = open(tex_path, encoding=encoding).read()
+
+    import re
+    # Check if document uses CMYK color model
+    has_cmyk = bool(re.search(r'\\definecolor.*CMYK', content)) or bool(re.search(r'\\color.*CMYK', content))
+
+    if has_cmyk:
+        print(f'Warning: Document {tex_path} uses CMYK color model - ensuring proper support...')
+
+        # Convert CMYK to cmyk in color definitions
+        content = content.replace(r'{CMYK}', r'{cmyk}')
+
+        # Ensure xcolor package is loaded with cmyk option
+        if r'\usepackage{xcolor}' in content:
+            content = content.replace(r'\usepackage{xcolor}', r'\usepackage[cmyk]{xcolor}')
+        elif re.search(r'\\usepackage\[([^]]*)\]{xcolor}', content):
+            # Add cmyk to existing options
+            content = re.sub(r'\\usepackage\[([^]]*)\]{xcolor}', r'\\usepackage[\1,cmyk]{xcolor}', content)
+
+        # Write back the fixed content
+        with open(tex_path, 'w', encoding=encoding) as f:
+            f.write(content)
+
+        return True
+
+    return False
+
+
+def fix_nabla_braces(tex_path):
+    """
+    Fix missing braces after gradient operators like \nabla_
+    Example: \nabla_\boldsymbol{S}\mathcal{L} → \nabla_\boldsymbol{S}{\mathcal{L}}
+    """
+    encoding = get_file_encoding(tex_path)
+    with open(tex_path, encoding=encoding) as f:
+        content = f.read()
+
+    # Simple replacements for common cases - only handle cases where we know we can add matching braces
+    fixed_content = content
+
+    # List of specific gradient operator patterns that need braces fixed
+    fixes = [
+        # Main problematic case from the error log
+        (r'\nabla_\boldsymbol{S}\mathcal{L}_t(\boldsymbol{S}_{t-1})', r'\nabla_\boldsymbol{S}{\mathcal{L}_t(\boldsymbol{S}_{t-1})}'),
+
+        # Other common cases with proper brace handling
+        (r'\nabla_\boldsymbol{\theta}\mathcal{J}(\boldsymbol{\theta})', r'\nabla_\boldsymbol{\theta}{\mathcal{J}(\boldsymbol{\theta})}'),
+        (r'\nabla_\theta\mathcal{L}(\boldsymbol{\theta})', r'\nabla_\theta{\mathcal{L}(\boldsymbol{\theta})}'),
+        (r'\nabla_x\mathcal{F}(x)', r'\nabla_x{\mathcal{F}(x)}'),
+    ]
+
+    for old, new in fixes:
+        fixed_content = fixed_content.replace(old, new)
+
+    if fixed_content != content:
+        print(f'Fixed missing braces after gradient operators in {tex_path}')
+        with open(tex_path, 'w', encoding=encoding) as f:
+            f.write(fixed_content)
+        return True
+    return False
 
 
 def generate_bbl_from_bib(tex_path):

@@ -12,7 +12,7 @@ match_code_replace = math_code + r"_(\d+(?:_\d+)*)*"
 options = r"\[[^\[\]]*?\]"
 spaces = r"[ \t]*"
 
-get_pattern_brace = lambda index: rf"\{{((?:[^{{}}]++|(?{index}))*+)\}}"
+get_pattern_brace = lambda index: rf"\{{((?:[^\{{}}]++|(?{index}))*+)\}}"
 get_pattern_env = lambda name: rf"\\begin{spaces}\{{({name})\}}{spaces}({options})?(.*?)\\end{spaces}\{{\1\}}"
 
 
@@ -171,6 +171,8 @@ def recover_latex_objects(text, replaced_objs, tolerate_error=False):
             content = replaced_objs[index]
 
             # Remove Chinese translation note
+            # Replace "text to be translated" placeholder back with [t]
+            content = content.replace("待翻译文本", "t")
             if "（严格忠实于原文的翻译：）" in content:
                 content = content.replace("（严格忠实于原文的翻译：）", "").strip()
 
@@ -188,7 +190,14 @@ def recover_latex_objects(text, replaced_objs, tolerate_error=False):
                     env_name = table_match.group(1)
                     col_spec = table_match.group(2)
                     # Count number of columns, ignoring vertical lines and spaces
-                    num_cols = len(re.sub(r'[|\s]', '', col_spec))
+                    import re
+                    # Column spec patterns: single char (l/c/r) or paragraph spec (p{...}/m{...}/b{...})
+                    col_pattern = r'([lcr]|p\{[^}]*\}|m\{[^}]*\}|b\{[^}]*\})'
+                    cleaned_col_spec = re.sub(r'[|\s]', '', col_spec)
+                    num_cols = len(re.findall(col_pattern, cleaned_col_spec))
+                    # Fallback to string length if regex doesn't match (unusual case)
+                    if num_cols == 0:
+                        num_cols = len(cleaned_col_spec)
 
                     # For wide tables (more than 6 columns), make them smaller with progressive sizing
                     if num_cols > 6:
@@ -267,6 +276,10 @@ def recover_latex_objects(text, replaced_objs, tolerate_error=False):
     n_bad1 = len(matched_indices) - n_good
     n_bad2 = nobjs - n_good
     n_bad = max(n_bad1, n_bad2)
+
+    # Global fix: Replace any remaining "待翻译文本" placeholders with "t"
+    text = text.replace("待翻译文本", "t")
+
     return text, n_bad, nobjs
 
 
@@ -384,7 +397,7 @@ def process_leading_level_brace(latex, function):
 
 def split_by_command(latex):
     # split by things like \item
-    text, envs = replace_latex_objects(latex, command_simple=False)
+    text, envs = replace_latex_objects(latex, command_simple=False, brace=False)
 
     texts = [(text, '')]
 

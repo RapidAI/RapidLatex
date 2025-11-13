@@ -217,7 +217,7 @@ class LatexTranslator:
         for format_name in format_list:
             latex_original_paragraph = process_latex.delete_specific_format(latex_original_paragraph, format_name)
 
-        text_original_paragraph, objs = process_latex.replace_latex_objects(latex_original_paragraph)
+        text_original_paragraph, objs = process_latex.replace_latex_objects(latex_original_paragraph, brace=False)
         # Since \n is equivalent to space in latex, we change \n back to space
         # otherwise the translators view them as separate sentences
         text_original_paragraph = process_latex.combine_split_to_sentences(text_original_paragraph)
@@ -316,7 +316,7 @@ class LatexTranslator:
         2. split text
         3. convert text back to objects
         '''
-        text, objs = process_latex.replace_latex_objects(latex)
+        text, objs = process_latex.replace_latex_objects(latex, brace=False)
         paragraphs_text = re.split(r'\n\n+', text)
         paragraphs_latex = [process_latex.recover_latex_objects(paragraph_text, objs)[0] for paragraph_text in paragraphs_text]
         return paragraphs_latex
@@ -324,10 +324,10 @@ class LatexTranslator:
     def worker(self, latex_original_paragraph):
         try:
             # Check for problematic LaTeX patterns that might cause issues
-            if '\\string@' in latex_original_paragraph:
-                print(f"Warning: Found problematic \\string@ pattern in paragraph {self.num}, cleaning...")
-                # Replace problematic patterns
-                latex_original_paragraph = latex_original_paragraph.replace('\\string@', ' @')
+            if '\\string' in latex_original_paragraph:
+                print(f"Warning: Found problematic \\string pattern in paragraph {self.num}, cleaning...")
+                # Replace problematic patterns: \stringX -> X for any X
+                latex_original_paragraph = re.sub(r'\\string(.)', r'\1', latex_original_paragraph)
 
             if self.add_cache:
                 hash_key_paragraph = cache.deterministic_hash(latex_original_paragraph)
@@ -406,9 +406,9 @@ class LatexTranslator:
             all_futures = list(future_to_index.keys())
 
             # First, try to complete all futures
-            for future in tqdm.auto.tqdm(concurrent.futures.as_completed(all_futures, timeout=600), total=len(latex_original_paragraphs)):
+            for future in tqdm.auto.tqdm(concurrent.futures.as_completed(all_futures, timeout=1800), total=len(latex_original_paragraphs)):
                 try:
-                    result = future.result(timeout=60)  # 60 seconds timeout per paragraph
+                    result = future.result(timeout=180)  # 3 minutes timeout per paragraph
                     index = future_to_index[future]
                     latex_translated_paragraphs[index] = result
                     completed_count += 1
